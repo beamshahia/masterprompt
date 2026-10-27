@@ -328,6 +328,7 @@
             let resultData = null;
             let attempts = 0;
             let delay = 1000;
+            let lastErrorMsg = "Gagal menghasilkan prompt. Silakan coba lagi.";
 
             while (!success && attempts < 3) {
                 try {
@@ -338,23 +339,34 @@
                     });
                     
                     if (!response.ok) {
-                        console.error("API Response Error:", await response.text());
-                        throw new Error('API Error');
+                        const errData = await response.text();
+                        console.error("API Response Error:", errData);
+                        if (errData.includes("API_KEY_INVALID") || errData.includes("API key not valid") || errData.includes("keyInvalid")) {
+                            throw new Error("API Key Gemini tidak valid/kosong. Harap isi API Key Anda di kode.");
+                        } else {
+                            throw new Error("Gagal terhubung ke AI. Error jaringan atau server.");
+                        }
                     }
                     
                     const data = await response.json();
                     const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
                     
                     if (textContent) {
-                        resultData = JSON.parse(textContent);
+                        // Bersihkan teks dari markdown (misal: ```json ... ```) yang kadang mengganggu parsing
+                        const cleanJson = textContent.replace(/```json/gi, '').replace(/```/g, '').trim();
+                        resultData = JSON.parse(cleanJson);
                         success = true;
                     } else {
-                        throw new Error('Empty response content');
+                        throw new Error('Respons dari AI kosong.');
                     }
                 } catch (e) {
-                    console.warn(`Attempt ${attempts + 1} failed:`, e);
+                    console.warn(`Percobaan ${attempts + 1} gagal:`, e);
+                    lastErrorMsg = e.message;
                     attempts++;
-                    if (attempts >= 3) break;
+                    // Jika error karena API Key, batalkan retry agar tidak membuang waktu
+                    if (attempts >= 3 || lastErrorMsg.includes("API Key")) {
+                        break; 
+                    }
                     await new Promise(res => setTimeout(res, delay));
                     delay *= 2;
                 }
@@ -402,7 +414,7 @@
                 // Scroll ke hasil
                 document.getElementById('resultContainer').scrollIntoView({ behavior: 'smooth' });
             } else {
-                showToast("Gagal menghasilkan prompt. Silakan coba lagi.");
+                showToast(lastErrorMsg);
                 document.getElementById('emptyState').classList.remove('hidden');
             }
         }
